@@ -1,6 +1,7 @@
 const Sale = require("../models/Sale");
 const Purchase = require("../models/Purchase");
 const Product = require("../models/Product");
+const Supplier = require("../models/Supplier");
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -12,12 +13,15 @@ exports.getDashboardStats = async (req, res) => {
   try {
     const [
       totalProducts,
+      totalSuppliers,
       productStatsAgg,
       salesAgg,
+      completedSalesAgg,
       purchasesAgg,
       monthlySalesAgg,
     ] = await Promise.all([
       Product.countDocuments({ isActive: true }),
+      Supplier.countDocuments({ isActive: { $ne: false } }),
       Product.aggregate([
         { $match: { isActive: true } },
         {
@@ -41,6 +45,19 @@ exports.getDashboardStats = async (req, res) => {
             _id: null,
             totalRevenue: { $sum: "$totalAmount" },
             totalSalesCount: { $sum: 1 },
+          },
+        },
+      ]),
+      Sale.aggregate([
+        {
+          $match: {
+            paymentStatus: { $in: ["paid", "completed"] },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            completedSalesCount: { $sum: 1 },
           },
         },
       ]),
@@ -70,6 +87,14 @@ exports.getDashboardStats = async (req, res) => {
       ]),
     ]);
 
+    const inventoryValuation = productStatsAgg[0]?.inventoryValuation || 0;
+    const lowStockCount = productStatsAgg[0]?.lowStockCount || 0;
+    const totalRevenue = salesAgg[0]?.totalRevenue || 0;
+    const totalSalesCount = salesAgg[0]?.totalSalesCount || 0;
+    const completedSalesCount = completedSalesAgg[0]?.completedSalesCount || 0;
+    const totalPurchaseCost = purchasesAgg[0]?.totalPurchaseCost || 0;
+    const totalPurchasesCount = purchasesAgg[0]?.totalPurchasesCount || 0;
+
     const monthlySales = monthlySalesAgg.map((item) => ({
       month: `${MONTH_NAMES[item._id.month - 1]} ${item._id.year}`,
       totalSales: item.totalSales,
@@ -78,12 +103,18 @@ exports.getDashboardStats = async (req, res) => {
 
     res.json({
       totalProducts,
-      inventoryValuation: productStatsAgg[0]?.inventoryValuation || 0,
-      lowStockCount: productStatsAgg[0]?.lowStockCount || 0,
-      totalRevenue: salesAgg[0]?.totalRevenue || 0,
-      totalSalesCount: salesAgg[0]?.totalSalesCount || 0,
-      totalPurchaseCost: purchasesAgg[0]?.totalPurchaseCost || 0,
-      totalPurchasesCount: purchasesAgg[0]?.totalPurchasesCount || 0,
+      totalSuppliers,
+      inventoryValuation,
+      stockValue: inventoryValuation,
+      lowStockCount,
+      totalRevenue,
+      totalSalesCount,
+      totalSales: totalSalesCount,
+      completedSalesCount,
+      completedSales: completedSalesCount,
+      totalPurchaseCost,
+      totalPurchasesCount,
+      totalPurchases: totalPurchasesCount,
       monthlySales,
     });
   } catch (error) {
