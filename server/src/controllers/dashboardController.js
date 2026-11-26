@@ -10,44 +10,65 @@ const MONTH_NAMES = [
 // GET /api/dashboard/stats
 exports.getDashboardStats = async (req, res) => {
   try {
-    const [totalProducts, salesAgg, purchasesAgg, monthlySalesAgg] =
-      await Promise.all([
-        Product.countDocuments({ isActive: true }),
-        Sale.aggregate([
-          { $match: { paymentStatus: { $ne: "cancelled" } } },
-          {
-            $group: {
-              _id: null,
-              totalRevenue: { $sum: "$totalAmount" },
-              totalSalesCount: { $sum: 1 },
+    const [
+      totalProducts,
+      productStatsAgg,
+      salesAgg,
+      purchasesAgg,
+      monthlySalesAgg,
+    ] = await Promise.all([
+      Product.countDocuments({ isActive: true }),
+      Product.aggregate([
+        { $match: { isActive: true } },
+        {
+          $group: {
+            _id: null,
+            inventoryValuation: {
+              $sum: { $multiply: ["$costPrice", "$stock"] },
             },
-          },
-        ]),
-        Purchase.aggregate([
-          { $match: { status: { $ne: "cancelled" } } },
-          {
-            $group: {
-              _id: null,
-              totalPurchaseCost: { $sum: "$totalAmount" },
-              totalPurchasesCount: { $sum: 1 },
-            },
-          },
-        ]),
-        Sale.aggregate([
-          { $match: { paymentStatus: { $ne: "cancelled" } } },
-          {
-            $group: {
-              _id: {
-                year: { $year: "$saleDate" },
-                month: { $month: "$saleDate" },
+            lowStockCount: {
+              $sum: {
+                $cond: [{ $lte: ["$stock", "$minStock"] }, 1, 0],
               },
-              totalSales: { $sum: "$totalAmount" },
-              orders: { $sum: 1 },
             },
           },
-          { $sort: { "_id.year": 1, "_id.month": 1 } },
-        ]),
-      ]);
+        },
+      ]),
+      Sale.aggregate([
+        { $match: { paymentStatus: { $ne: "cancelled" } } },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$totalAmount" },
+            totalSalesCount: { $sum: 1 },
+          },
+        },
+      ]),
+      Purchase.aggregate([
+        { $match: { status: { $ne: "cancelled" } } },
+        {
+          $group: {
+            _id: null,
+            totalPurchaseCost: { $sum: "$totalAmount" },
+            totalPurchasesCount: { $sum: 1 },
+          },
+        },
+      ]),
+      Sale.aggregate([
+        { $match: { paymentStatus: { $ne: "cancelled" } } },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$saleDate" },
+              month: { $month: "$saleDate" },
+            },
+            totalSales: { $sum: "$totalAmount" },
+            orders: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+      ]),
+    ]);
 
     const monthlySales = monthlySalesAgg.map((item) => ({
       month: `${MONTH_NAMES[item._id.month - 1]} ${item._id.year}`,
@@ -57,6 +78,8 @@ exports.getDashboardStats = async (req, res) => {
 
     res.json({
       totalProducts,
+      inventoryValuation: productStatsAgg[0]?.inventoryValuation || 0,
+      lowStockCount: productStatsAgg[0]?.lowStockCount || 0,
       totalRevenue: salesAgg[0]?.totalRevenue || 0,
       totalSalesCount: salesAgg[0]?.totalSalesCount || 0,
       totalPurchaseCost: purchasesAgg[0]?.totalPurchaseCost || 0,
