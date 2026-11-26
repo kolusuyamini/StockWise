@@ -68,7 +68,12 @@ const DashboardPage = () => {
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="font-semibold text-slate-800">Inventory valuation</h2>
           <p className="mt-3 text-3xl font-bold text-blue-600">
-            {currency(summary.stockValue ?? summary.stockValuation ?? 0)}
+            {currency(
+              summary.inventoryValuation ??
+                summary.stockValue ??
+                summary.stockValuation ??
+                0
+            )}
           </p>
           <p className="mt-2 text-sm text-slate-500">
             Total value of available inventory
